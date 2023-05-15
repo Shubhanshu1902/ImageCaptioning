@@ -32,6 +32,8 @@ from PIL import Image
 from nltk.translate import bleu
 from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import corpus_bleu
+from nltk.translate.meteor_score import meteor_score
+
 
 # Get descriptor dictionary
 def getDescriptors(captionDatafile):
@@ -214,3 +216,48 @@ def train(epochs,print_each,model,criterion,optimizer,dls,vocab_sz,validation_lo
         
         save_model(model, epoch)
         
+def load_model(Path,model):
+    checkpoint = torch.load(Path)
+    model.load_state_dict(checkpoint['state_dict'])
+
+def make_predictions(model,val_loader,batch_size,dataset,descriptors,device):
+    model.eval()
+
+    y_true, y_pred =list(),list()
+
+    # iterate through all the batches in validation data
+
+    for idxx, (batch_images,batch_captions,batch_image_ids) in enumerate(iter(val_loader)):
+        with torch.no_grad():
+
+            # iterate through a batch
+            for i in range(batch_size):
+                
+                # error handling in case of empty record
+                if len(batch_captions[i:i+1])==0:
+                    break
+                
+                img_caption = batch_captions[i:i+1][0].tolist()
+                sentence = [dataset.vocab.indexToSentence[idx] for idx in img_caption if idx != 0]
+
+                y_true.append(descriptors[batch_image_ids[i]])
+
+                image_feature = model.encoder(batch_images[i:i+1].to(device))
+
+                image_pred_caption = model.decoder.generate_caption(image_feature, vocab=dataset.vocab)
+
+                y_pred.append(image_pred_caption)
+
+                predicted_sentence = ' '.join(image_pred_caption)
+
+    
+    return y_true, y_pred, predicted_sentence
+
+def calc_BLEU_score(y_true,y_pred):
+    print('BLEU-1: %f' % corpus_bleu(y_true, y_pred, weights=(1.0, 0, 0, 0)))
+    print('BLEU-2: %f' % corpus_bleu(y_true, y_pred, weights=(0.5, 0.5, 0, 0)))
+    print('BLEU-3: %f' % corpus_bleu(y_true, y_pred, weights=(0.3, 0.3, 0.3, 0)))
+    print('BLEU-4: %f' % corpus_bleu(y_true, y_pred, weights=(0.25, 0.25, 0.25, 0.25)))
+
+def calc_meteor_score(y_true,y_pred):
+    print('Meteor score: ', meteor_score(y_true,y_pred))
